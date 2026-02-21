@@ -24,7 +24,7 @@ from charts      import (score_bar_chart, regime_overlay_chart, score_history_ch
 
 st.set_page_config(
     page_title="RegimeIQ · Market Regime",
-    page_icon="📡", layout="wide",
+    page_icon=None, layout="wide",
     initial_sidebar_state="expanded",
 )
 
@@ -150,6 +150,7 @@ with score_col:
         score_bar_chart(pred.score, pred.regime),
         use_container_width=True,
         config={"displayModeBar": False},
+        key="header_score_bar",
     )
     st.markdown(
         f'<p style="font-size:13px;color:#94a3b8;margin-top:-10px;padding-left:4px">'
@@ -183,7 +184,7 @@ st.divider()
 fig_overlay = regime_overlay_chart(history, lookback_days=lookback)
 if not show_vix_overlay:
     fig_overlay.data = (fig_overlay.data[0],) + fig_overlay.data[2:]
-st.plotly_chart(fig_overlay, use_container_width=True, config={"displayModeBar": False})
+st.plotly_chart(fig_overlay, use_container_width=True, config={"displayModeBar": False}, key="main_overlay")
 
 
 # ═══ TABS ═════════════════════════════════════════════════════════════════════
@@ -200,7 +201,7 @@ with tab1:
     imp_col, sig_col = st.columns([1, 1])
     with imp_col:
         st.plotly_chart(feature_importance_chart(model, feature_cols),
-                        use_container_width=True, config={"displayModeBar": False})
+                        use_container_width=True, config={"displayModeBar": False}, key="feature_importance")
     with sig_col:
         st.markdown("#### Current Signal Readings")
         sig_df = pd.DataFrame({
@@ -222,7 +223,7 @@ with tab1:
 
     if show_score_history:
         st.plotly_chart(score_history_chart(history, lookback_days=donut_lookback),
-                        use_container_width=True, config={"displayModeBar": False})
+                        use_container_width=True, config={"displayModeBar": False}, key="score_history")
 
     with st.expander("How does the model decide?", expanded=False):
         st.markdown(f"""
@@ -267,7 +268,7 @@ with tab2:
 
     with donut_col:
         st.plotly_chart(regime_donut(history, lookback_days=donut_lookback),
-                        use_container_width=True, config={"displayModeBar": False})
+                        use_container_width=True, config={"displayModeBar": False}, key="regime_donut")
         streak_regime = history["regime_label"].iloc[-1]
         streak_count  = 1
         for lbl in reversed(history["regime_label"].values[:-1]):
@@ -353,10 +354,10 @@ with tab3:
     gauge_col, bar_col2, explain_col = st.columns([1, 1, 1])
     with gauge_col:
         st.plotly_chart(simulate_gauge(sim_pred.score, sim_pred.regime),
-                        use_container_width=True, config={"displayModeBar": False})
+                        use_container_width=True, config={"displayModeBar": False}, key="sim_gauge")
     with bar_col2:
         st.plotly_chart(score_bar_chart(sim_pred.score, sim_pred.regime),
-                        use_container_width=True, config={"displayModeBar": False})
+                        use_container_width=True, config={"displayModeBar": False}, key="sim_score_bar")
     with explain_col:
         st.markdown(f"#### {sim_meta['emoji']} {sim_pred.regime}")
         st.markdown(f"**Score: `{sim_pred.score:.1f} / 100`**")
@@ -438,7 +439,7 @@ with tab4:
 
     # ── Equity curve ───────────────────────────────────────────────────────
     st.plotly_chart(backtest_chart(result),
-                    use_container_width=True, config={"displayModeBar": False})
+                    use_container_width=True, config={"displayModeBar": False}, key="backtest_equity")
 
     # ── Interpretation callout ─────────────────────────────────────────────
     outperforms = result.total_return > result.bh_return

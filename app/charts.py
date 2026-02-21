@@ -283,26 +283,49 @@ def regime_donut(history: pd.DataFrame, lookback_days: int = 252) -> go.Figure:
 def simulate_gauge(score: float, regime: str) -> go.Figure:
     color = REGIME_LINE[regime]
     fig = go.Figure(go.Indicator(
-        mode="gauge+number",
+        # gauge only — number added manually as annotation for precise positioning
+        mode="gauge",
         value=round(score, 1),
-        number=dict(font=dict(size=40, color=color)),
-        title=dict(text=f"Simulated: <b>{regime}</b>", font=dict(size=16, color=TEXT_COL)),
+        domain=dict(x=[0, 1], y=[0, 1]),
         gauge=dict(
-            axis=dict(range=[0, 100], tickcolor=TEXT_COL, tickfont=dict(color=TEXT_COL),
+            axis=dict(range=[0, 100], tickcolor=TEXT_COL,
+                      tickfont=dict(color=TEXT_COL, size=10),
                       tickvals=[0, 35, 50, 65, 100]),
-            bar=dict(color=color, thickness=0.3),
+            bar=dict(color=color, thickness=0.25),
             bgcolor=DARK_GRID, borderwidth=0,
             steps=[
-                dict(range=[0,  BEAR_THRESHOLD], color="rgba(239,68,68,0.15)"),
+                dict(range=[0,  BEAR_THRESHOLD],            color="rgba(239,68,68,0.15)"),
                 dict(range=[BEAR_THRESHOLD, BULL_THRESHOLD], color="rgba(234,179,8,0.15)"),
-                dict(range=[BULL_THRESHOLD, 100], color="rgba(34,197,94,0.15)"),
+                dict(range=[BULL_THRESHOLD, 100],            color="rgba(34,197,94,0.15)"),
             ],
-            threshold=dict(line=dict(color=color, width=3), thickness=0.8, value=score),
+            threshold=dict(line=dict(color=color, width=3),
+                           thickness=0.8, value=score),
         ),
     ))
     fig.update_layout(
-        paper_bgcolor=DARK_BG, font=dict(color=TEXT_COL),
-        height=260, margin=dict(l=20, r=20, t=50, b=20),
+        paper_bgcolor=DARK_BG,
+        font=dict(color=TEXT_COL),
+        height=240,
+        margin=dict(l=30, r=30, t=40, b=10),
+        # Score number centred inside the arc opening
+        annotations=[
+            dict(
+                text=f'<b>{score:.1f}</b>',
+                x=0.5, y=0.18,
+                xref="paper", yref="paper",
+                showarrow=False,
+                font=dict(size=42, color=color),
+                xanchor="center", yanchor="middle",
+            ),
+            dict(
+                text=regime.upper(),
+                x=0.5, y=0.42,
+                xref="paper", yref="paper",
+                showarrow=False,
+                font=dict(size=13, color=TEXT_COL),
+                xanchor="center", yanchor="middle",
+            ),
+        ],
     )
     return fig
 
