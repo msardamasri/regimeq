@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.env
+venv/
+.venv/
+
+# Editor
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Raw data (large, regenerated on deploy)
+artifacts/spy_raw.csv
+artifacts/vix_raw.csv
+
+# Keep trained artifacts in git (small, needed for cold start)
+!artifacts/model.pkl
+!artifacts/scaler.pkl
+!artifacts/feature_cols.pkl
+!artifacts/regime_history.csv
