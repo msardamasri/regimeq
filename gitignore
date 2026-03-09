@@ -24,3 +24,6 @@ artifacts/vix_raw.csv
 !artifacts/scaler.pkl
 !artifacts/feature_cols.pkl
 !artifacts/regime_history.csv
+
+#secrets
+secrets.toml

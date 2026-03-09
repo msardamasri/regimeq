@@ -18,6 +18,7 @@ for p in (str(APP_DIR), str(ROOT_DIR / "train")):
 from data_loader import load_artifacts, load_regime_history, load_live_data, build_live_features
 from predictor   import predict, simulate_prediction, REGIME_META, BEAR_THRESHOLD, BULL_THRESHOLD
 from backtest    import run_backtest
+from sentiment_analyzer import analyze_batch, blend_scores, SentimentResult
 from charts      import (score_bar_chart, regime_overlay_chart, score_history_chart,
                           feature_importance_chart, regime_donut, simulate_gauge,
                           backtest_chart)
@@ -188,11 +189,12 @@ st.plotly_chart(fig_overlay, use_container_width=True, config={"displayModeBar":
 
 
 # ═══ TABS ═════════════════════════════════════════════════════════════════════
-tab1, tab2, tab3, tab4 = st.tabs([
+tab1, tab2, tab3, tab4, tab5 = st.tabs([
     "Signal Breakdown",
     "Regime History",
     "Scenario Simulator",
     "Strategy Backtest",
+    "News Sentiment",
 ])
 
 
@@ -476,6 +478,219 @@ with tab4:
 Past performance does not indicate future results. The model was trained on this same
 data, so in-sample results are optimistic — treat as a proof of concept, not a trading strategy.
         """)
+
+
+
+# ── TAB 5: News Sentiment ─────────────────────────────────────────────────────
+with tab5:
+    st.markdown("#### News Sentiment Analyser")
+    st.caption(
+        "Paste one or more financial headlines (one per line). "
+        "GPT-4o-mini extracts structured signals and blends the sentiment score "
+        "with the live XGBoost regime score to produce a composite reading."
+    )
+
+    # ── API key ───────────────────────────────────────────────────────────────
+    import os
+    api_key = ""
+    try:
+        api_key = st.secrets.get("OPENAI_API_KEY", "")
+    except Exception:
+        pass
+    if not api_key:
+        _secrets_path = Path(__file__).resolve().parent.parent / ".streamlit" / "secrets.toml"
+        if _secrets_path.exists():
+            try:
+                import tomllib as _tl
+                api_key = _tl.loads(_secrets_path.read_text(encoding="utf-8")).get("OPENAI_API_KEY", "")
+            except ImportError:
+                for _line in _secrets_path.read_text(encoding="utf-8").splitlines():
+                    if _line.strip().startswith("OPENAI_API_KEY"):
+                        api_key = _line.split("=", 1)[1].strip().strip('"').strip("'")
+                        break
+            except Exception:
+                pass
+    if not api_key:
+        api_key = os.environ.get("OPENAI_API_KEY", "")
+
+    if api_key:
+        st.success("OpenAI API key loaded automatically.", icon="🔑")
+    else:
+        api_key = st.text_input(
+            "OpenAI API key", type="password", placeholder="sk-...",
+            help="Paste your key here, or add OPENAI_API_KEY to .streamlit/secrets.toml",
+        )
+
+    # ── Headline input ────────────────────────────────────────────────────────
+    example_headlines = (
+        "Federal Reserve signals pause in rate hikes as inflation cools\n"
+        "Nvidia beats earnings estimates by 25%, raises full-year guidance\n"
+        "China imposes new tariffs on US semiconductor exports"
+    )
+    raw_input = st.text_area(
+        "headlines", placeholder=example_headlines,
+        height=130, label_visibility="collapsed",
+    )
+
+    col_run, col_clear = st.columns([1, 5])
+    run_clicked   = col_run.button("Analyse", type="primary", use_container_width=True)
+    clear_clicked = col_clear.button("Clear", use_container_width=False)
+
+    if clear_clicked:
+        st.session_state.pop("sentiment_results", None)
+        st.session_state.pop("composite_score", None)
+        st.rerun()
+
+    if run_clicked:
+        if not api_key:
+            st.warning("Add your OpenAI API key above to run the analysis.")
+        elif not raw_input.strip():
+            st.warning("Paste at least one headline.")
+        else:
+            headlines = [h for h in raw_input.strip().split("\n") if h.strip()]
+            with st.spinner(f"Analysing {len(headlines)} headline(s) with GPT-4o-mini..."):
+                results = analyze_batch(headlines, api_key)
+                composite = blend_scores(pred.score, results)
+            st.session_state["sentiment_results"] = results
+            st.session_state["composite_score"]   = composite
+
+    # ── Results ───────────────────────────────────────────────────────────────
+    if "sentiment_results" in st.session_state and st.session_state["sentiment_results"]:
+        results   = st.session_state["sentiment_results"]
+        composite = st.session_state["composite_score"]
+        comp_meta = REGIME_META[composite.regime]
+
+        st.markdown("---")
+
+        # ── Composite score row ───────────────────────────────────────────────
+        base_col, arrow_col, comp_col = st.columns([1, 1, 1])
+
+        with base_col:
+            bm = REGIME_META[pred.regime]
+            st.markdown(
+                f'''<div style="background:#1e293b;border:1px solid #334155;border-radius:10px;
+padding:16px;text-align:center">
+<div style="font-size:11px;color:#94a3b8;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Technical Score</div>
+<div style="font-size:38px;font-weight:800;color:#38bdf8;line-height:1">{composite.xgb_score:.1f}</div>
+<div style="font-size:12px;color:{bm["color"]};font-weight:600;margin-top:4px">{pred.regime}</div>
+</div>''', unsafe_allow_html=True
+            )
+
+        with arrow_col:
+            shift = composite.sentiment_shift
+            sign  = "+" if shift >= 0 else ""
+            scol  = "#22c55e" if shift > 1 else ("#ef4444" if shift < -1 else "#94a3b8")
+            arrow = "↗" if shift > 1 else ("↘" if shift < -1 else "→")
+            st.markdown(
+                f'''<div style="display:flex;align-items:center;justify-content:center;
+height:100%;flex-direction:column;gap:2px;padding-top:8px">
+<div style="font-size:32px">{arrow}</div>
+<div style="font-size:20px;font-weight:700;color:{scol}">{sign}{shift:.1f} pts</div>
+<div style="font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:0.5px">sentiment shift</div>
+</div>''', unsafe_allow_html=True
+            )
+
+        with comp_col:
+            st.markdown(
+                f'''<div style="background:{comp_meta["bg"]};border:1px solid {comp_meta["color"]};
+border-radius:10px;padding:16px;text-align:center">
+<div style="font-size:11px;color:#94a3b8;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Composite Score</div>
+<div style="font-size:38px;font-weight:800;color:{comp_meta["color"]};line-height:1">{composite.composite:.1f}</div>
+<div style="font-size:12px;font-weight:600;color:{comp_meta["color"]};margin-top:4px">{composite.regime}</div>
+</div>''', unsafe_allow_html=True
+            )
+
+        st.markdown("<br>", unsafe_allow_html=True)
+
+        # ── Headline cards ────────────────────────────────────────────────────
+        if len(results) > 1:
+            import plotly.graph_objects as go
+            scores = [r.score for r in results]
+            labels = [r.headline[:45] + "…" if len(r.headline) > 45 else r.headline for r in results]
+            colors = ["#22c55e" if s > 0.1 else "#ef4444" if s < -0.1 else "#eab308" for s in scores]
+            fig_sent = go.Figure(go.Bar(
+                x=scores, y=labels, orientation="h",
+                marker_color=colors,
+                text=[f"{s:+.2f}" for s in scores],
+                textposition="outside",
+                hovertemplate="<b>%{y}</b><br>Score: %{x:+.2f}<extra></extra>",
+            ))
+            fig_sent.update_layout(
+                paper_bgcolor="#0f172a", plot_bgcolor="#0f172a",
+                font=dict(color="#e2e8f0", size=11),
+                height=max(180, len(results) * 52),
+                margin=dict(l=10, r=70, t=10, b=10),
+                xaxis=dict(range=[-1.15, 1.15], gridcolor="#1e293b",
+                           zeroline=True, zerolinecolor="#475569",
+                           zerolinewidth=1.5, tickvals=[-1,-0.5,0,0.5,1]),
+                yaxis=dict(gridcolor="#1e293b"),
+                showlegend=False,
+            )
+            st.plotly_chart(fig_sent, use_container_width=True,
+                            config={"displayModeBar": False}, key="sentiment_bars")
+
+        st.markdown("#### Headline Breakdown")
+        for i, r in enumerate(results):
+            score_color = "#22c55e" if r.score > 0.1 else ("#ef4444" if r.score < -0.1 else "#94a3b8")
+            impact_emoji = {"bullish": "🟢", "bearish": "🔴", "neutral": "🟡"}.get(r.market_impact, "⚪")
+            conf_pct = int(r.confidence * 100)
+            score_bar_w = int(abs(r.score) * 100)
+            score_bar_c = "#22c55e" if r.score > 0.1 else ("#ef4444" if r.score < -0.1 else "#94a3b8")
+
+            with st.expander(
+                f"{impact_emoji} **{r.headline[:80]}{'…' if len(r.headline) > 80 else ''}**",
+                expanded=(i == 0),
+            ):
+                # Score + confidence mini-header
+                st.markdown(
+                    f'''<div style="display:flex;gap:12px;margin-bottom:14px;flex-wrap:wrap">
+<div style="background:#1e293b;border-radius:6px;padding:6px 14px;text-align:center">
+  <div style="font-size:10px;color:#64748b;text-transform:uppercase">Score</div>
+  <div style="font-size:20px;font-weight:700;color:{score_color}">{r.score:+.2f}</div>
+</div>
+<div style="background:#1e293b;border-radius:6px;padding:6px 14px;text-align:center">
+  <div style="font-size:10px;color:#64748b;text-transform:uppercase">Confidence</div>
+  <div style="font-size:20px;font-weight:700;color:#e2e8f0">{conf_pct}%</div>
+</div>
+<div style="background:#1e293b;border-radius:6px;padding:6px 14px;text-align:center">
+  <div style="font-size:10px;color:#64748b;text-transform:uppercase">Sentiment</div>
+  <div style="font-size:20px;font-weight:700;color:{score_color}">{r.sentiment.upper()}</div>
+</div>
+<div style="background:#1e293b;border-radius:6px;padding:6px 14px;text-align:center">
+  <div style="font-size:10px;color:#64748b;text-transform:uppercase">Impact</div>
+  <div style="font-size:20px;font-weight:700;color:{score_color}">{r.market_impact.upper()}</div>
+</div>
+</div>''', unsafe_allow_html=True
+                )
+
+                left, right = st.columns([1, 1])
+                with left:
+                    st.markdown("**Signals detected**")
+                    for sig in r.signals:
+                        st.markdown(f"- {sig}")
+                    if r.affected_sectors:
+                        st.markdown(f"**Sectors:** {', '.join(r.affected_sectors)}")
+                with right:
+                    st.markdown("**Reasoning**")
+                    st.markdown(f"*{r.reasoning}*")
+
+        # ── Methodology ───────────────────────────────────────────────────────
+        with st.expander("How the composite score is calculated", expanded=False):
+            st.markdown("**Blending formula**")
+            st.markdown(
+                "Each headline score *s* ∈ [−1, 1] is weighted by its confidence *c*. "
+                "The confidence-weighted average is scaled to a maximum shift of **±15 points** "
+                "on the 0–100 regime scale."
+            )
+            st.code(
+                "s_avg     = sum(s_i * c_i for each headline) / sum(c_i)\n"
+                "composite = clamp(xgb_score + s_avg * 15,  min=0,  max=100)",
+                language="python",
+            )
+            st.markdown(
+                "The regime label (Bear / Transitional / Bull) is re-applied to the composite "
+                "using the same thresholds as the base model."
+            )
 
 
 # ═══ FOOTER ═══════════════════════════════════════════════════════════════════
